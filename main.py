@@ -7,14 +7,17 @@ from flask import Flask, request
 import threading
 import sqlite3
 import datetime
+from slack_bolt import App as SlackApp
+from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 with open("keys.json", "r") as the_file:
     KEYS = json.load(the_file)
 
 flask_app = Flask(__name__)
 
+slack_app = SlackApp(signing_secret=KEYS["slack_signing_secret"], token=KEYS["slack_bot_token"])
 fitbit_auth_client = FitbitOauth2Client(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"])
-print(f"auth url: {fitbit_auth_client.authorize_token_url(scope=["activity", "sleep", "settings"], state=fitbit_auth_client.session.new_state())}")
+#print(f"auth url: {fitbit_auth_client.authorize_token_url(scope=["activity", "sleep", "settings"], state=fitbit_auth_client.session.new_state())}")
 
 
 def get_auth_url(slack_user_id, slack_display_name=""):
@@ -111,6 +114,71 @@ def sql_setup():
         with closing(conn.cursor()) as cur:
             cur.execute(users_statement)
             conn.commit()
+
+@slack_app.event("app_home_opened")
+def update_slack_home_tab(client, event):
+    try:
+        with sqlite3.connect("main.db") as conn:
+            with closing(conn.cursor()) as cur:
+                cur.execute("SELECT fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time FROM users WHERE slack_user_id = ?", event["user"])
+                fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time = cur.selectone()
+
+        client.views_publish(
+            user_id=event["user"],
+            view={
+                "type": "home",
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                        },
+                        "accessory": {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "Edit Config"
+                            },
+                            "value": "settings"
+                        }
+                    },
+                    {
+                        "type": "divider"
+                    },
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "*Fitbit Authenticated?*\nYes!"
+                        }
+                    },
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"*Channel to send updates in:*\n<#{channel_id}>"
+                        }
+                    },
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"*Minimum steps to send daily stats for:*\n{minimum_steps}"
+                        }
+                    }
+                    ,
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"*Send daily stats?*\nYes!"
+                        }
+                    }
+                ]
+            }
+        )
+    except Exception as e:
+        print(f"error pushing slack app home tab: {e}")
 
 sql_setup()
 threading.Thread(target=flask_app.run, kwargs={"port": 3100}).start()
