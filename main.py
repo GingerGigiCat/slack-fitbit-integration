@@ -145,6 +145,23 @@ def test_fitbit_authentication(access_token, refresh_token):
     except:
         return False
 
+def app_home_steps_option(steps):
+    return {
+        "text": {
+            "type": "plain_text",
+            "text": f"{steps}",
+            "emoji": True
+        },
+        "value": f"steps-option-{steps}"
+    }
+
+def generate_app_home_steps_options(steps=[0, 1000]):
+    options = []
+    for step in steps:
+        options.append(app_home_steps_option(step))
+
+    return options
+
 @slack_app.event("app_home_opened")
 def update_home_tab(client, event):
     print(event)
@@ -166,7 +183,7 @@ def update_home_tab(client, event):
                                             },
                                             "description": {
                                                 "type": "mrkdwn",
-                                                "text": "Checking this will send your daily steps, active time, and the percentage of calories burned for activity in your channel"
+                                                "text": "Send your daily steps, active time, and the percentage of calories burned for activity in your channel"
                                             },
                                             "value": "value-send-daily-stats"
                                         }
@@ -177,7 +194,7 @@ def update_home_tab(client, event):
                                             },
                                             "description": {
                                                 "type": "mrkdwn",
-                                                "text": "Checking this will ping you in every daily stats message that is sent (not sleep data because then i'll just wake you up)"
+                                                "text": "Ping you in every daily stats message that is sent (not sleep data because then i'll just wake you up)"
                                             },
                                             "value": "value-do_ping_in_daily_stats"
                                         }
@@ -188,7 +205,7 @@ def update_home_tab(client, event):
                                             },
                                             "description": {
                                                 "type": "mrkdwn",
-                                                "text": "Checking this will send a message when you fall asleep, and a message when you wake up to say the duration of your sleep"
+                                                "text": "Send a message when you fall asleep, and a message when you wake up to say the duration of your sleep"
                                             },
                                             "value": "value-send_sleep"
                                         }
@@ -262,48 +279,33 @@ def update_home_tab(client, event):
                                         "text": "Select an item",
                                         "emoji": True
                                     },
-                                    "initial_option": {
-                                        "text": {
-                                            "type": "plain_text",
-                                            "text": "*plain_text option 0*",
-                                            "emoji": True
-                                        },
-                                        "value": "value-0"
-                                    },
-                                    "options": [
-                                        {
-                                            "text": {
-                                                "type": "plain_text",
-                                                "text": "*plain_text option 0*",
-                                                "emoji": True
-                                            },
-                                            "value": "value-0"
-                                        },
-                                        {
-                                            "text": {
-                                                "type": "plain_text",
-                                                "text": "*plain_text option 1*",
-                                                "emoji": True
-                                            },
-                                            "value": "value-1"
-                                        },
-                                        {
-                                            "text": {
-                                                "type": "plain_text",
-                                                "text": "*plain_text option 2*",
-                                                "emoji": True
-                                            },
-                                            "value": "value-2"
-                                        }
-                                    ],
-                                    "action_id": "static_select-action"
+                                    "initial_option": app_home_steps_option(minimum_steps),
+                                    "options": generate_app_home_steps_options([0, 100, 500, 1000, 2000, 3000, 4000, 5000, 7500, 10000, 12500, 15000, 17500, 20000]),
+                                    "action_id": "steps-selection"
                                 }
                             },
                             {
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": "Select the checkboxes you want!"
+                                    "text": "Time to send daily stats at (UTC)"
+                                },
+                                "accessory": {
+                                    "type": "timepicker",
+                                    "initial_time": "22:00",
+                                    "placeholder": {
+                                        "type": "plain_text",
+                                        "text": "Select time",
+                                        "emoji": True
+                                    },
+                                    "action_id": "timepicker-send-stats"
+                                }
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": "Select the options you want!"
                                 },
                                 "accessory": {
                                     "type": "checkboxes",
