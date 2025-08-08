@@ -9,9 +9,25 @@ import sqlite3
 import datetime
 from slack_bolt import App as SlackApp
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+from apscheduler.schedulers.blocking import BlockingScheduler
+
+scheduler = BlockingScheduler()
 
 with open("keys.json", "r") as the_file:
     KEYS = json.load(the_file)
+
+"""
+keys.json is a file with the contents:
+
+{
+    "fitbit_client_id": "",
+    "fitbit_client_secret": "",
+    "slack_signing_secret": "",
+    "slack_app_token": "",
+    "slack_bot_token": "",
+    "slack_bot_id": ""
+}
+"""
 
 flask_app = Flask(__name__)
 
@@ -107,7 +123,7 @@ def sql_setup():
         send_daily_stats INT,
         send_sleep INT,
         do_ping_in_daily_stats INT,
-        utc_daily_stats_time INT
+        utc_daily_stats_time TEXT
     )
     """
     with sqlite3.connect("main.db") as conn:
@@ -115,71 +131,229 @@ def sql_setup():
             cur.execute(users_statement)
             conn.commit()
 
-@slack_app.event("app_home_opened")
-def update_slack_home_tab(client, event):
-    try:
-        with sqlite3.connect("main.db") as conn:
-            with closing(conn.cursor()) as cur:
-                cur.execute("SELECT fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time FROM users WHERE slack_user_id = ?", event["user"])
-                fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time = cur.selectone()
 
-        client.views_publish(
-            user_id=event["user"],
-            view={
-                "type": "home",
-                "blocks": [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                        },
-                        "accessory": {
-                            "type": "button",
-                            "text": {
-                                "type": "plain_text",
-                                "text": "Edit Config"
+def true_false_to_yes_no(val):
+    if val:
+        return "Yes!"
+    else:
+        return "No :("
+
+def test_fitbit_authentication(access_token, refresh_token):
+    try:
+        fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], access_token, refresh_token).activities()
+        return True
+    except:
+        return False
+
+@slack_app.event("app_home_opened")
+def update_home_tab(client, event):
+    print(event)
+    #try:
+
+    with sqlite3.connect("main.db") as conn:
+        with closing(conn.cursor()) as cur:
+            cur.execute("SELECT fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time FROM users WHERE slack_user_id = ?", (event["user"],))
+            retrieved = cur.fetchone()
+            if retrieved:
+                fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time = retrieved
+
+                authenticated = test_fitbit_authentication(fitbit_access_token, fitbit_refresh_token)
+
+                send_daily_stats_checkbox = {
+                                            "text": {
+                                                "type": "mrkdwn",
+                                                "text": "*Send daily stats*"
+                                            },
+                                            "description": {
+                                                "type": "mrkdwn",
+                                                "text": "Checking this will send your daily steps, active time, and the percentage of calories burned for activity in your channel"
+                                            },
+                                            "value": "value-send-daily-stats"
+                                        }
+                do_ping_in_daily_stats_checkbox = {
+                                            "text": {
+                                                "type": "mrkdwn",
+                                                "text": "*Ping you in daily stats messages*"
+                                            },
+                                            "description": {
+                                                "type": "mrkdwn",
+                                                "text": "Checking this will ping you in every daily stats message that is sent (not sleep data because then i'll just wake you up)"
+                                            },
+                                            "value": "value-do_ping_in_daily_stats"
+                                        }
+                send_sleep_checkbox = {
+                                            "text": {
+                                                "type": "mrkdwn",
+                                                "text": "*Send sleep data*"
+                                            },
+                                            "description": {
+                                                "type": "mrkdwn",
+                                                "text": "Checking this will send a message when you fall asleep, and a message when you wake up to say the duration of your sleep"
+                                            },
+                                            "value": "value-send_sleep"
+                                        }
+                reauth_button_green = {
+                                    "type": "button",
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "Re-authenticate",
+                                        "emoji": True
+                                    },
+                                    "style": "primary",
+                                    "value": "button-reauth"
+                                }
+                reauth_button_default = {
+                                    "type": "button",
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "Re-authenticate",
+                                        "emoji": True
+                                    },
+                                    "value": "button-reauth"
+                                }
+                initial_checkbox_options = []
+                if send_daily_stats: initial_checkbox_options.append(send_daily_stats_checkbox)
+                if do_ping_in_daily_stats: initial_checkbox_options.append(do_ping_in_daily_stats_checkbox)
+                if send_sleep: initial_checkbox_options.append(send_sleep_checkbox)
+
+                client.views_publish(
+                    user_id=event["user"],
+                    view={
+                        "type": "home",
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"Fitbit authenticated? {true_false_to_yes_no(authenticated)}"
+                                },
+                                "accessory": reauth_button_default if authenticated else reauth_button_green
                             },
-                            "value": "settings"
-                        }
-                    },
-                    {
-                        "type": "divider"
-                    },
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": "*Fitbit Authenticated?*\nYes!"
-                        }
-                    },
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"*Channel to send updates in:*\n<#{channel_id}>"
-                        }
-                    },
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"*Minimum steps to send daily stats for:*\n{minimum_steps}"
-                        }
+                            {
+                                "type": "divider"
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"Channel or conversation to send stats in (please do not choose a channel that isn't yours)\n*You will have to ping <@{KEYS["slack_bot_id"]}> in the channel to add the bot initially.*"
+                                },
+                                "accessory": {
+                                    "type": "conversations_select",
+                                    "initial_conversation": channel_id,
+                                    "placeholder": {
+                                        "type": "plain_text",
+                                        "text": "Select conversations",
+                                        "emoji": True
+                                    },
+                                    "action_id": "conversation-send-select"
+                                }
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": "Minimum steps to send stats for"
+                                },
+                                "accessory": {
+                                    "type": "static_select",
+                                    "placeholder": {
+                                        "type": "plain_text",
+                                        "text": "Select an item",
+                                        "emoji": True
+                                    },
+                                    "initial_option": {
+                                        "text": {
+                                            "type": "plain_text",
+                                            "text": "*plain_text option 0*",
+                                            "emoji": True
+                                        },
+                                        "value": "value-0"
+                                    },
+                                    "options": [
+                                        {
+                                            "text": {
+                                                "type": "plain_text",
+                                                "text": "*plain_text option 0*",
+                                                "emoji": True
+                                            },
+                                            "value": "value-0"
+                                        },
+                                        {
+                                            "text": {
+                                                "type": "plain_text",
+                                                "text": "*plain_text option 1*",
+                                                "emoji": True
+                                            },
+                                            "value": "value-1"
+                                        },
+                                        {
+                                            "text": {
+                                                "type": "plain_text",
+                                                "text": "*plain_text option 2*",
+                                                "emoji": True
+                                            },
+                                            "value": "value-2"
+                                        }
+                                    ],
+                                    "action_id": "static_select-action"
+                                }
+                            },
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": "Select the checkboxes you want!"
+                                },
+                                "accessory": {
+                                    "type": "checkboxes",
+                                    "initial_options": initial_checkbox_options,
+                                    "options": [
+                                        send_daily_stats_checkbox,
+
+                                        do_ping_in_daily_stats_checkbox,
+
+                                        send_sleep_checkbox
+                                    ],
+                                    "action_id": "checkboxes-action"
+                                }
+                            }
+                        ]
                     }
-                    ,
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"*Send daily stats?*\nYes!"
-                        }
-                    }
-                ]
-            }
-        )
-    except Exception as e:
-        print(f"error pushing slack app home tab: {e}")
+                )
+
+            else:
+                client.views_publish(
+                    user_id=event["user"],
+                    view={
+                        "type": "home",
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {
+                                    "type": "mrkdwn",
+                                    "text": f"Hi! Lets start by getting your fitbit account linked by pressing the green button to the right.\nAfter that, ping <@{KEYS["slack_bot_id"]}> to add the bot to wherever you want it to send to, then come back here to configure it."
+                                },
+                                "accessory": {
+                                    "type": "button",
+                                    "text": {
+                                        "type": "plain_text",
+                                        "text": "Re-authenticate",
+                                        "emoji": True
+                                    },
+                                    "style": "primary",
+                                    "value": "button-reauth"
+                                }
+                            }
+                        ]})
+
+    #except Exception as e:
+    #    print(f"error pushing slack app home tab: {e}")
 
 sql_setup()
+threading.Thread(target=SocketModeHandler(slack_app, KEYS["slack_app_token"]).start).start()
 threading.Thread(target=flask_app.run, kwargs={"port": 3100}).start()
+
 print(get_auth_url("U07DHR6J57U", "Gigi Cat"))
+
+scheduler.start() # don't remove this if you do everything breaks because python is weird
