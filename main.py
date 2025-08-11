@@ -57,6 +57,7 @@ def get_auth_url(slack_user_id, slack_display_name=""):
 
     except Exception as e:
         print(f"error in oauth url generator sql: {e}")
+        return "https://uhoh"
 
     return url
 
@@ -217,7 +218,8 @@ def update_home_tab(client, event):
                                         "emoji": True
                                     },
                                     "style": "primary",
-                                    "value": "button-reauth"
+                                    "value": "button-reauth",
+                                    "action_id": "button-reauth"
                                 }
                 reauth_button_default = {
                                     "type": "button",
@@ -226,7 +228,8 @@ def update_home_tab(client, event):
                                         "text": "Re-authenticate",
                                         "emoji": True
                                     },
-                                    "value": "button-reauth"
+                                    "value": "button-reauth",
+                                    "action_id": "button-reauth"
                                 }
                 initial_checkbox_options = []
                 if send_daily_stats: initial_checkbox_options.append(send_daily_stats_checkbox)
@@ -292,7 +295,7 @@ def update_home_tab(client, event):
                                 },
                                 "accessory": {
                                     "type": "timepicker",
-                                    "initial_time": "22:00",
+                                    "initial_time": tz_offset_slack_time(utc_daily_stats_time[:5], 0 - int(slack_app.client.users_info(user=event["user"])["user"]["tz_offset"])),
                                     "placeholder": {
                                         "type": "plain_text",
                                         "text": "Select time",
@@ -352,6 +355,107 @@ def update_home_tab(client, event):
     #except Exception as e:
     #    print(f"error pushing slack app home tab: {e}")
 
+@slack_app.action("button-reauth")
+def reauth_button(ack, body, client):
+    #print(body)
+    user_id = body["user"]["id"]
+    user_profile = client.users_profile_get(user=user_id)
+    #print(slack_app.client.users_info(user=user_id))
+    #print(user_profile["profile"])
+    try:
+        display_name = user_profile["profile"]["display_name"]
+    except KeyError:
+        display_name = user_profile["profile"]["real_name"]
+
+    #print(str(get_auth_url(user_id, display_name)))
+    #print(user_id)
+    #print(display_name)
+    ack()
+    client.views_open(
+        user_id=body["user"],
+        view={
+            "type": "modal",
+            "title": {
+                "type": "plain_text",
+                "text": "Fitbit Login",
+                "emoji": True
+            },
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "Press the button to the right to login with your browser"
+                    },
+                    "accessory": {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Authenticate"
+                        },
+                        "url": get_auth_url(user_id, display_name)[0],
+                        "style": "primary",
+                        "action_id": "button-web-ignore"
+                    }
+                }
+            ]
+        },
+        trigger_id=body["trigger_id"]
+    )
+
+@slack_app.action("button-web-ignore")
+def ignored_button(ack):
+    ack()
+
+def button_sql_bits(user_id, value, column, ack):
+    try:
+        with sqlite3.connect("main.db") as conn:
+            with closing(conn.cursor()) as cur:
+                cur.execute(f"""
+                UPDATE users
+                SET {column} = ?
+                WHERE slack_user_id = ?
+                """, (value, user_id))     # Column name is assumed to be safe! don't user input it
+                ack()
+    except sqlite3.SQLITE_ERROR as e:
+        print(f"Error saving config option {value} for {column}: {e}")
+        # Don't acknowledge, to show something went wrong
+
+@slack_app.action("conversation-send-select")
+def conversation_send_select(ack, body, client):
+    #print(body)
+    #print(body["actions"][0]["selected_conversation"])
+    button_sql_bits(body["user"]["id"], body["actions"][0]["selected_conversation"], "channel_id", ack)
+
+@slack_app.action("steps-selection")
+def steps_selection(ack, body, client):
+    button_sql_bits(body["user"]["id"], body["actions"][0]["selected_option"]["text"]["text"], "minimum_steps", ack)
+
+@slack_app.action("timepicker-send-stats")
+def timepicker_send_stats(ack, body, client):
+    #print(body)
+    #print(body["actions"][0])
+    ack()
+    selected_time_raw = body["actions"][0]["selected_time"]
+    timezone_offset = int(slack_app.client.users_info(user=body["user"]["id"])["user"]["tz_offset"])
+    #print(slack_app.client.users_info(user="U07L45W79E1")["user"]["tz_offset"])
+    utc_time_slackfriendly = tz_offset_slack_time(selected_time_raw, timezone_offset)
+    print(utc_time_slackfriendly)
+    button_sql_bits(body["user"]["id"], utc_time_slackfriendly, "utc_daily_stats_time", ack)
+
+def tz_offset_slack_time(slack_time, tz_offset): # (timezone offset in seconds)
+    selected_timedelta = datetime.timedelta(hours=int(slack_time[0:2]), minutes=int(slack_time.replace(":", "")[2:4]))
+    utc_timedelta = selected_timedelta - datetime.timedelta(seconds=tz_offset)
+    #print(utc_timedelta)
+    if utc_timedelta.seconds < 0:
+        utc_time_slackfriendly = f"{str(round(((24*60*60 + utc_timedelta.seconds) / 60) // 60)).zfill(2)}:{str(round(((24*60*60 + utc_timedelta.seconds) / 60) % 60)).zfill(2)}"
+    else:
+        utc_time_slackfriendly = f"{str(round((utc_timedelta.seconds / 60) // 60)).zfill(2)}:{str(round((utc_timedelta.seconds / 60) % 60)).zfill(2)}"
+
+    return utc_time_slackfriendly
+
+
+# idea: for sending daily stats, run a function every minute that fetches all records from the db where the time = the current time, then send for each record
 sql_setup()
 threading.Thread(target=SocketModeHandler(slack_app, KEYS["slack_app_token"]).start).start()
 threading.Thread(target=flask_app.run, kwargs={"port": 3100}).start()
