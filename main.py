@@ -36,10 +36,11 @@ fitbit_auth_client = FitbitOauth2Client(KEYS["fitbit_client_id"], KEYS["fitbit_c
 #print(f"auth url: {fitbit_auth_client.authorize_token_url(scope=["activity", "sleep", "settings"], state=fitbit_auth_client.session.new_state())}")
 
 
+
 def get_auth_url(slack_user_id, slack_display_name=""):
     state = fitbit_auth_client.session.new_state()
     url = fitbit_auth_client.authorize_token_url(scope=["activity", "sleep", "settings"], state=state)
-
+    fitbit_auth_client.refresh_token()
     try:
         with sqlite3.connect("main.db") as conn:
             with closing(conn.cursor()) as cur:
@@ -163,6 +164,47 @@ def generate_app_home_steps_options(steps=[0, 1000]):
 
     return options
 
+
+send_daily_stats_checkbox = {
+    "text": {
+        "type": "mrkdwn",
+        "text": "*Send daily stats*",
+        "verbatim": False
+    },
+    "description": {
+        "type": "mrkdwn",
+        "text": "Send your daily steps, active time, and the percentage of calories burned for activity in your channel",
+        "verbatim": False
+    },
+    "value": "value-send-daily-stats"
+}
+do_ping_in_daily_stats_checkbox = {
+    "text": {
+        "type": "mrkdwn",
+        "text": "*Ping you in daily stats messages*",
+        "verbatim": False
+    },
+    "description": {
+        "type": "mrkdwn",
+        "text": "Ping you in every daily stats message that is sent (not sleep data because then i'll just wake you up)",
+        "verbatim": False
+    },
+    "value": "value-do_ping_in_daily_stats"
+}
+send_sleep_checkbox = {
+    "text": {
+        "type": "mrkdwn",
+        "text": "*Send sleep data*",
+        "verbatim": False
+    },
+    "description": {
+        "type": "mrkdwn",
+        "text": "Send a message when you fall asleep, and a message when you wake up to say the duration of your sleep",
+        "verbatim": False
+    },
+    "value": "value-send_sleep"
+}
+
 @slack_app.event("app_home_opened")
 def update_home_tab(client, event):
     print(event)
@@ -177,39 +219,6 @@ def update_home_tab(client, event):
 
                 authenticated = test_fitbit_authentication(fitbit_access_token, fitbit_refresh_token)
 
-                send_daily_stats_checkbox = {
-                                            "text": {
-                                                "type": "mrkdwn",
-                                                "text": "*Send daily stats*"
-                                            },
-                                            "description": {
-                                                "type": "mrkdwn",
-                                                "text": "Send your daily steps, active time, and the percentage of calories burned for activity in your channel"
-                                            },
-                                            "value": "value-send-daily-stats"
-                                        }
-                do_ping_in_daily_stats_checkbox = {
-                                            "text": {
-                                                "type": "mrkdwn",
-                                                "text": "*Ping you in daily stats messages*"
-                                            },
-                                            "description": {
-                                                "type": "mrkdwn",
-                                                "text": "Ping you in every daily stats message that is sent (not sleep data because then i'll just wake you up)"
-                                            },
-                                            "value": "value-do_ping_in_daily_stats"
-                                        }
-                send_sleep_checkbox = {
-                                            "text": {
-                                                "type": "mrkdwn",
-                                                "text": "*Send sleep data*"
-                                            },
-                                            "description": {
-                                                "type": "mrkdwn",
-                                                "text": "Send a message when you fall asleep, and a message when you wake up to say the duration of your sleep"
-                                            },
-                                            "value": "value-send_sleep"
-                                        }
                 reauth_button_green = {
                                     "type": "button",
                                     "text": {
@@ -235,6 +244,32 @@ def update_home_tab(client, event):
                 if send_daily_stats: initial_checkbox_options.append(send_daily_stats_checkbox)
                 if do_ping_in_daily_stats: initial_checkbox_options.append(do_ping_in_daily_stats_checkbox)
                 if send_sleep: initial_checkbox_options.append(send_sleep_checkbox)
+
+                if initial_checkbox_options:
+                    checkboxes_accessory = {
+                                    "type": "checkboxes",
+                                    "initial_options": initial_checkbox_options,
+                                    "options": [
+                                        send_daily_stats_checkbox,
+
+                                        do_ping_in_daily_stats_checkbox,
+
+                                        send_sleep_checkbox
+                                    ],
+                                    "action_id": "checkboxes-action"
+                                }
+                else:
+                    checkboxes_accessory = {
+                        "type": "checkboxes",
+                        "options": [
+                            send_daily_stats_checkbox,
+
+                            do_ping_in_daily_stats_checkbox,
+
+                            send_sleep_checkbox
+                        ],
+                        "action_id": "checkboxes-action"
+                    }
 
                 client.views_publish(
                     user_id=event["user"],
@@ -310,18 +345,8 @@ def update_home_tab(client, event):
                                     "type": "mrkdwn",
                                     "text": "Select the options you want!"
                                 },
-                                "accessory": {
-                                    "type": "checkboxes",
-                                    "initial_options": initial_checkbox_options,
-                                    "options": [
-                                        send_daily_stats_checkbox,
 
-                                        do_ping_in_daily_stats_checkbox,
-
-                                        send_sleep_checkbox
-                                    ],
-                                    "action_id": "checkboxes-action"
-                                }
+                                "accessory": checkboxes_accessory
                             }
                         ]
                     }
@@ -403,10 +428,6 @@ def reauth_button(ack, body, client):
         trigger_id=body["trigger_id"]
     )
 
-@slack_app.action("button-web-ignore")
-def ignored_button(ack):
-    ack()
-
 def button_sql_bits(user_id, value, column, ack):
     try:
         with sqlite3.connect("main.db") as conn:
@@ -420,6 +441,10 @@ def button_sql_bits(user_id, value, column, ack):
     except sqlite3.SQLITE_ERROR as e:
         print(f"Error saving config option {value} for {column}: {e}")
         # Don't acknowledge, to show something went wrong
+
+@slack_app.action("button-web-ignore")
+def ignored_button(ack):
+    ack()
 
 @slack_app.action("conversation-send-select")
 def conversation_send_select(ack, body, client):
@@ -435,7 +460,6 @@ def steps_selection(ack, body, client):
 def timepicker_send_stats(ack, body, client):
     #print(body)
     #print(body["actions"][0])
-    ack()
     selected_time_raw = body["actions"][0]["selected_time"]
     timezone_offset = int(slack_app.client.users_info(user=body["user"]["id"])["user"]["tz_offset"])
     #print(slack_app.client.users_info(user="U07L45W79E1")["user"]["tz_offset"])
@@ -453,6 +477,28 @@ def tz_offset_slack_time(slack_time, tz_offset): # (timezone offset in seconds)
         utc_time_slackfriendly = f"{str(round((utc_timedelta.seconds / 60) // 60)).zfill(2)}:{str(round((utc_timedelta.seconds / 60) % 60)).zfill(2)}"
 
     return utc_time_slackfriendly
+
+@slack_app.action("checkboxes-action")
+def checkboxes_action(ack, body, client):
+    print(body["actions"][0])
+
+    uid = body["user"]["id"]
+    selected_options = body["actions"][0]["selected_options"]
+
+    if send_daily_stats_checkbox in selected_options:
+        button_sql_bits(uid, 1, "send_daily_stats", ack)
+    else:
+        button_sql_bits(uid, 0, "send_daily_stats", ack)
+
+    if do_ping_in_daily_stats_checkbox in selected_options:
+        button_sql_bits(uid, 1, "do_ping_in_daily_stats", ack)
+    else:
+        button_sql_bits(uid, 0, "do_ping_in_daily_stats", ack)
+
+    if send_sleep_checkbox in selected_options:
+        button_sql_bits(uid, 1, "send_sleep", ack)
+    else:
+        button_sql_bits(uid, 0, "send_sleep", ack)
 
 
 # idea: for sending daily stats, run a function every minute that fetches all records from the db where the time = the current time, then send for each record
