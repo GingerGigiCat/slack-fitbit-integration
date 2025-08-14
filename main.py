@@ -125,7 +125,11 @@ def sql_setup():
         send_daily_stats INT,
         send_sleep INT,
         do_ping_in_daily_stats INT,
-        utc_daily_stats_time TEXT
+        utc_daily_stats_time TEXT,
+        fitbit_token_expires_at INT,
+        banned INT,
+        last_sleep_count INT,
+        last_sleep_endtime TEXT
     )
     """
     with sqlite3.connect("main.db") as conn:
@@ -140,9 +144,21 @@ def true_false_to_yes_no(val):
     else:
         return "No :("
 
-def test_fitbit_authentication(access_token, refresh_token):
+def test_fitbit_authentication(access_token, refresh_token, slack_user_id, token_expires_at):
     try:
-        fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], access_token, refresh_token).activities()
+        def refresh_cb(token):
+            print(f"refreshing fitbit access tokens")
+            with sqlite3.connect("main.db") as conn:
+                with closing(conn.cursor()) as cur:
+                    cur.execute("""UPDATE users
+                                   SET fitbit_access_token     = ?,
+                                       fitbit_refresh_token    = ?,
+                                       fitbit_token_expires_at = ?
+                                   WHERE slack_user_id = ?
+                                """,
+                                (token["access_token"], token["refresh_token"], token["expires_at"], slack_user_id))
+        fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], access_token, refresh_token, token_expires_at, refresh_cb).activities()
+        print(fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], access_token, refresh_token, token_expires_at, refresh_cb).get_sleep(datetime.date.today()))
         return True
     except:
         return False
@@ -212,12 +228,12 @@ def update_home_tab(client, event):
 
     with sqlite3.connect("main.db") as conn:
         with closing(conn.cursor()) as cur:
-            cur.execute("SELECT fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time FROM users WHERE slack_user_id = ?", (event["user"],))
+            cur.execute("SELECT fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time, fitbit_token_expires_at FROM users WHERE slack_user_id = ?", (event["user"],))
             retrieved = cur.fetchone()
             if retrieved:
-                fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time = retrieved
+                fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, send_daily_stats, send_daily_stats, send_sleep, do_ping_in_daily_stats, utc_daily_stats_time, fitbit_token_expires_at = retrieved
 
-                authenticated = test_fitbit_authentication(fitbit_access_token, fitbit_refresh_token)
+                authenticated = test_fitbit_authentication(fitbit_access_token, fitbit_refresh_token, event["user"], fitbit_token_expires_at)
 
                 reauth_button_green = {
                                     "type": "button",
@@ -501,10 +517,127 @@ def checkboxes_action(ack, body, client):
         button_sql_bits(uid, 0, "send_sleep", ack)
 
 
+def do_daily_stats():
+    timenow = datetime.datetime.now(datetime.timezone.utc)
+    time_slack_friendly = f"{str(round(timenow.hour)).zfill(2)}:{str(round(timenow.minute)).zfill(2)}"
+    #print(time_slack_friendly)
+    with sqlite3.connect("main.db") as conn:
+        with closing(conn.cursor()) as cur:
+            cur.execute("""
+            SELECT slack_user_id, slack_display_name, fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, do_ping_in_daily_stats, fitbit_token_expires_at FROM users
+            WHERE utc_daily_stats_time = ? AND send_daily_stats = 1
+            """, (time_slack_friendly,))
+            retrieveds = cur.fetchall()
+            if retrieveds:
+                for record in retrieveds:
+                    slack_user_id, slack_display_name, fitbit_access_token, fitbit_refresh_token, channel_id, minimum_steps, do_ping_in_daily_stats, fitbit_token_expires_at = record
+
+                    def refresh_cb(token):
+                        print(f"refreshing access tokens")
+                        with sqlite3.connect("main.db") as conn:
+                            with closing(conn.cursor()) as cur:
+                                cur.execute("""UPDATE users
+                                SET fitbit_access_token = ?,
+                                    fitbit_refresh_token = ?,
+                                    fitbit_token_expires_at = ?
+                                WHERE slack_user_id = ?
+                                """, (token["access_token"], token["refresh_token"], token["expires_at"], slack_user_id))
+
+                    temp_fitbit_client = fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], fitbit_access_token, fitbit_refresh_token, fitbit_token_expires_at, refresh_cb)
+                    activities = temp_fitbit_client.activities()  # this exists i promise
+
+                    if int(activities["summary"]["steps"]) > minimum_steps:
+                        slack_app.client.chat_postMessage(channel=channel_id,
+                                                          text=f"""*way to go!*
+                                                      
+{f"<@{slack_user_id}>" if do_ping_in_daily_stats else slack_display_name} has done {activities["summary"]["steps"]} steps today!
+and they spent {activities["summary"]["lightlyActiveMinutes"] + activities["summary"]["fairlyActiveMinutes"] + activities["summary"]["veryActiveMinutes"]} minutes active!!
+and they used {round((activities["summary"]["activityCalories"] / activities["summary"]["caloriesOut"]) * 100, 1)}% of burned calories on activity
+                    """)
+                    # print(activities)
+                    # print(f"""
+                    # Steps today: {activities["summary"]["steps"]} (lazy)
+                    # Active time: {activities["summary"]["lightlyActiveMinutes"] + activities["summary"]["fairlyActiveMinutes"] + activities["summary"]["veryActiveMinutes"]} minutes
+                    # {round((activities["summary"]["activityCalories"] / activities["summary"]["caloriesOut"]) * 100, 1)}% of burned calories spent on activity
+                    # """)
+
+def do_sleep_stats():
+    with sqlite3.connect("main.db") as conn:
+        with closing(conn.cursor()) as cur:
+            cur.execute("""SELECT slack_user_id, slack_display_name, fitbit_access_token, fitbit_refresh_token, channel_id, fitbit_token_expires_at, last_sleep_count, last_sleep_endtime FROM users
+                WHERE send_sleep = 1
+            """)
+            retrieveds = cur.fetchall()
+
+            if retrieveds:
+                for retrieved in retrieveds:
+                    slack_user_id, slack_display_name, fitbit_access_token, fitbit_refresh_token, channel_id, fitbit_token_expires_at, last_sleep_count, last_sleep_endtime = retrieved
+                    def refresh_cb(token):
+                        print(f"refreshing access tokens")
+                        with sqlite3.connect("main.db") as conn:
+                            with closing(conn.cursor()) as cur:
+                                cur.execute("""UPDATE users
+                                SET fitbit_access_token = ?,
+                                    fitbit_refresh_token = ?,
+                                    fitbit_token_expires_at = ?
+                                WHERE slack_user_id = ?
+                                """, (token["access_token"], token["refresh_token"], token["expires_at"], slack_user_id))
+
+
+
+                    temp_fitbit_client = fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], fitbit_access_token, fitbit_refresh_token, fitbit_token_expires_at, refresh_cb)
+                    sleep_data = temp_fitbit_client.get_sleep(datetime.date.today())
+
+                    if len(sleep_data["sleep"]) != last_sleep_count:
+                        print(f"sleep number changed, was {last_sleep_count}, is now {sleep_data["sleep"]}")
+                        cur.execute("""UPDATE users
+                        SET last_sleep_count = ?
+                        WHERE slack_user_id = ?
+                        """, (len(sleep_data["sleep"]), slack_user_id))
+
+                    print(f"{datetime.datetime.now().time()}: {sleep_data}")
+                    if len(sleep_data["sleep"]) > last_sleep_count:
+                        print("fell asleep??\n\n\n\n\n\n\n")
+                        slack_app.client.chat_postMessage(channel=channel_id,
+                                                          text=f"uhhhhhh i think {slack_display_name} just fell asleep, shhhh")
+
+
+
+                    if sleep_data["sleep"][-1]["endTime"] != last_sleep_endtime:
+                        print("endtime: " + sleep_data["sleep"][-1]["endTime"])
+                        print("endtime is different to the last one!")
+                        #print(datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"]))
+                        endtime = datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"])
+                        if datetime.datetime.now() - endtime > datetime.timedelta(minutes=15) and datetime.datetime.now() - endtime < datetime.timedelta(minutes=30):
+                            print("Woke up!!")
+                            slack_app.client.chat_postMessage(channel=channel_id,
+                                                              text=f"gooooood morning! {slack_display_name} woke up about 15 minutes ago!"
+                                                                   f"they slept for {sleep_data["sleep"][-1]["minutesAsleep"]/60} hours")
+
+                            cur.execute("""UPDATE users
+                                           SET last_sleep_endtime = ?
+                                           WHERE slack_user_id = ?""",
+                                        (sleep_data["sleep"][-1]["endTime"], slack_user_id))
+
+
+def daily_stats_runner(counter):
+    if counter <= 0:
+        counter = 5
+    counter -= 1
+    #print(counter)
+    threading.Timer(60, daily_stats_runner, args=(counter,)).start()
+    threading.Thread(target=do_daily_stats).start()
+    if counter == 4:
+        threading.Thread(target=do_sleep_stats).start()
+
+
+
+
 # idea: for sending daily stats, run a function every minute that fetches all records from the db where the time = the current time, then send for each record
 sql_setup()
 threading.Thread(target=SocketModeHandler(slack_app, KEYS["slack_app_token"]).start).start()
 threading.Thread(target=flask_app.run, kwargs={"port": 3100}).start()
+threading.Timer(60, daily_stats_runner, args=(5,)).start()
 
 print(get_auth_url("U07DHR6J57U", "Gigi Cat"))
 
