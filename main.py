@@ -588,36 +588,36 @@ def do_sleep_stats():
                     temp_fitbit_client = fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], fitbit_access_token, fitbit_refresh_token, fitbit_token_expires_at, refresh_cb)
                     sleep_data = temp_fitbit_client.get_sleep(datetime.date.today())
 
+                    """
                     if len(sleep_data["sleep"]) != last_sleep_count:
                         print(f"sleep number changed, was {last_sleep_count}, is now {sleep_data["sleep"]}")
-                        cur.execute("""UPDATE users
+                        cur.execute(\"\"\"UPDATE users
                         SET last_sleep_count = ?
                         WHERE slack_user_id = ?
-                        """, (len(sleep_data["sleep"]), slack_user_id))
+                        \"\"\", (len(sleep_data["sleep"]), slack_user_id))
 
                     print(f"{datetime.datetime.now().time()}: {sleep_data}")
                     if len(sleep_data["sleep"]) > last_sleep_count:
                         print("fell asleep??\n\n\n\n\n\n\n")
                         slack_app.client.chat_postMessage(channel=channel_id,
                                                           text=f"uhhhhhh i think {slack_display_name} just fell asleep, shhhh")
+                    """
+                    if sleep_data["sleep"]:
+                        if sleep_data["sleep"][-1]["endTime"] != last_sleep_endtime:
+                            print("endtime: " + sleep_data["sleep"][-1]["endTime"])
+                            print("endtime is different to the last one!")
+                            #print(datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"]))
+                            endtime = datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"])
+                            if True or (datetime.datetime.now() - endtime > datetime.timedelta(minutes=15) and datetime.datetime.now() - endtime < datetime.timedelta(minutes=50)):
+                                print("Woke up!!")
+                                slack_app.client.chat_postMessage(channel=channel_id,
+                                                                  text=f"gooooood morning! {slack_display_name} woke up about 15 minutes ago!\n"
+                                                                       f"they slept for {round(sleep_data["sleep"][-1]["minutesAsleep"]//60)}h {round(sleep_data["sleep"][-1]["minutesAsleep"]%60)}m")
 
-
-
-                    if sleep_data["sleep"][-1]["endTime"] != last_sleep_endtime:
-                        print("endtime: " + sleep_data["sleep"][-1]["endTime"])
-                        print("endtime is different to the last one!")
-                        #print(datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"]))
-                        endtime = datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"])
-                        if datetime.datetime.now() - endtime > datetime.timedelta(minutes=15) and datetime.datetime.now() - endtime < datetime.timedelta(minutes=30):
-                            print("Woke up!!")
-                            slack_app.client.chat_postMessage(channel=channel_id,
-                                                              text=f"gooooood morning! {slack_display_name} woke up about 15 minutes ago!"
-                                                                   f"they slept for {sleep_data["sleep"][-1]["minutesAsleep"]/60} hours")
-
-                            cur.execute("""UPDATE users
-                                           SET last_sleep_endtime = ?
-                                           WHERE slack_user_id = ?""",
-                                        (sleep_data["sleep"][-1]["endTime"], slack_user_id))
+                                cur.execute("""UPDATE users
+                                               SET last_sleep_endtime = ?
+                                               WHERE slack_user_id = ?""",
+                                            (sleep_data["sleep"][-1]["endTime"], slack_user_id))
 
 
 def daily_stats_runner(counter):
