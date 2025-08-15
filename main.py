@@ -608,7 +608,7 @@ def do_sleep_stats():
                             print("endtime is different to the last one!")
                             #print(datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"]))
                             endtime = datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"])
-                            if True or (datetime.datetime.now() - endtime > datetime.timedelta(minutes=15) and datetime.datetime.now() - endtime < datetime.timedelta(minutes=50)):
+                            if (datetime.datetime.now() - endtime > datetime.timedelta(minutes=15) and datetime.datetime.now() - endtime < datetime.timedelta(minutes=50)):
                                 print("Woke up!!")
                                 slack_app.client.chat_postMessage(channel=channel_id,
                                                                   text=f"gooooood morning! {slack_display_name} woke up about 15 minutes ago!\n"
