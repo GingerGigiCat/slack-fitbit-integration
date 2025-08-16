@@ -587,6 +587,7 @@ def do_sleep_stats():
 
                     temp_fitbit_client = fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], fitbit_access_token, fitbit_refresh_token, fitbit_token_expires_at, refresh_cb)
                     sleep_data = temp_fitbit_client.get_sleep(datetime.date.today())
+                    timezone_offset = int(slack_app.client.users_info(user=slack_user_id)["user"]["tz_offset"])
 
                     """
                     if len(sleep_data["sleep"]) != last_sleep_count:
@@ -608,7 +609,7 @@ def do_sleep_stats():
                             print("endtime is different to the last one!")
                             #print(datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"]))
                             endtime = datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"])
-                            if (datetime.datetime.now() - endtime > datetime.timedelta(minutes=15) and datetime.datetime.now() - endtime < datetime.timedelta(minutes=50)):
+                            if (datetime.datetime.now() - (endtime - datetime.timedelta(seconds=timezone_offset)) > datetime.timedelta(minutes=15) and datetime.datetime.now() - (endtime - datetime.timedelta(seconds=timezone_offset)) < datetime.timedelta(minutes=50)):
                                 print("Woke up!!")
                                 slack_app.client.chat_postMessage(channel=channel_id,
                                                                   text=f"gooooood morning! {slack_display_name} woke up about 15 minutes ago!\n"
