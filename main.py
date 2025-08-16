@@ -25,7 +25,8 @@ keys.json is a file with the contents:
     "slack_signing_secret": "",
     "slack_app_token": "",
     "slack_bot_token": "",
-    "slack_bot_id": ""
+    "slack_bot_id": "",
+    "port": 3100
 }
 """
 
@@ -637,7 +638,7 @@ def daily_stats_runner(counter):
 # idea: for sending daily stats, run a function every minute that fetches all records from the db where the time = the current time, then send for each record
 sql_setup()
 threading.Thread(target=SocketModeHandler(slack_app, KEYS["slack_app_token"]).start).start()
-threading.Thread(target=flask_app.run, kwargs={"port": 3100}).start()
+threading.Thread(target=flask_app.run, kwargs={"port": KEYS["port"]}).start()
 threading.Timer(60, daily_stats_runner, args=(5,)).start()
 
 print(get_auth_url("U07DHR6J57U", "Gigi Cat"))
