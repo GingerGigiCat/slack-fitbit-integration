@@ -216,7 +216,7 @@ send_sleep_checkbox = {
     },
     "description": {
         "type": "mrkdwn",
-        "text": "Send a message when you fall asleep, and a message when you wake up to say the duration of your sleep",
+        "text": "Send a message when you wake up to say the duration of your sleep",
         "verbatim": False
     },
     "value": "value-send_sleep"
@@ -308,7 +308,7 @@ def update_home_tab(client, event):
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": f"Channel or conversation to send stats in (please do not choose a channel that isn't yours)\n*You will have to ping <@{KEYS["slack_bot_id"]}> in the channel to add the bot initially.*"
+                                    "text": f"Channel or conversation to send stats in (please do not choose a channel that isn't yours)\n*You will have to ping <@{slack_app.client.auth_test()["user_id"]}> in the channel to add the bot initially.*"
                                 },
                                 "accessory": {
                                     "type": "conversations_select",
@@ -343,7 +343,7 @@ def update_home_tab(client, event):
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": "Time to send daily stats at (UTC)"
+                                    "text": "Time to send daily stats at"
                                 },
                                 "accessory": {
                                     "type": "timepicker",
@@ -379,7 +379,7 @@ def update_home_tab(client, event):
                                 "type": "section",
                                 "text": {
                                     "type": "mrkdwn",
-                                    "text": f"Hi! Lets start by getting your fitbit account linked by pressing the green button to the right.\nAfter that, ping <@{KEYS["slack_bot_id"]}> to add the bot to wherever you want it to send to, then come back here to configure it."
+                                    "text": f"Hi! Lets start by getting your fitbit account linked by pressing the green button to the right.\nAfter that, ping <@{slack_app.client.auth_test()["user_id"]}> to add the bot to wherever you want it to send to, then come back here to configure it."
                                 },
                                 "accessory": {
                                     "type": "button",
@@ -635,7 +635,6 @@ def daily_stats_runner(counter):
 
 
 
-# idea: for sending daily stats, run a function every minute that fetches all records from the db where the time = the current time, then send for each record
 sql_setup()
 threading.Thread(target=SocketModeHandler(slack_app, KEYS["slack_app_token"]).start).start()
 threading.Thread(target=flask_app.run, kwargs={"port": KEYS["port"]}).start()
