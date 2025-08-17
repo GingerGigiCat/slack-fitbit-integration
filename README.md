@@ -31,9 +31,9 @@ This bot is added to the hack club slack workspace and can be found at https://h
     {
       "fitbit_client_id": "",
       "fitbit_client_secret": "",
-      "slack_signing_secret": "",/
-      "slack_app_token": "",/
-      "slack_bot_token": "",/
+      "slack_signing_secret": "",
+      "slack_app_token": "",
+      "slack_bot_token": "",
       "port": 3100
     }
     ```
