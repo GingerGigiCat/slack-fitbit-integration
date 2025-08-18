@@ -159,7 +159,7 @@ def test_fitbit_authentication(access_token, refresh_token, slack_user_id, token
                                 """,
                                 (token["access_token"], token["refresh_token"], token["expires_at"], slack_user_id))
         fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], access_token, refresh_token, token_expires_at, refresh_cb).activities()
-        print(fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], access_token, refresh_token, token_expires_at, refresh_cb).get_sleep(datetime.date.today()))
+        #print(fitbit.Fitbit(KEYS["fitbit_client_id"], KEYS["fitbit_client_secret"], access_token, refresh_token, token_expires_at, refresh_cb).get_sleep(datetime.date.today()))
         return True
     except:
         return False
