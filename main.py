@@ -227,7 +227,7 @@ def update_home_tab(client, event):
     print(event)
     #try:
     if event["tab"] == "messages":
-        slack_app.client.chat_postEphemeral(channel=event["user"], user=event["user"], text="Hey there! To configure this bot, go to the *home* tab, as in the image below", attachments="https://hc-cdn.hel1.your-objectstorage.com/s/v3/35b4c0c234a7d0f437f99245d469aac098b88635_image.png")
+        slack_app.client.chat_postEphemeral(channel=event["user"], user=event["user"], text="Hey there! To configure this bot, go to the *home* tab, as in the image below", attachments=[{"fallback": "An image showing the home tab selected at the top of the conversation window", "image_url": "https://hc-cdn.hel1.your-objectstorage.com/s/v3/35b4c0c234a7d0f437f99245d469aac098b88635_image.png"}])
 
     with sqlite3.connect("main.db") as conn:
         with closing(conn.cursor()) as cur:
