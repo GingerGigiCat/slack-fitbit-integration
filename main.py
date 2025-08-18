@@ -499,7 +499,7 @@ def tz_offset_slack_time(slack_time, tz_offset): # (timezone offset in seconds)
 
 @slack_app.action("checkboxes-action")
 def checkboxes_action(ack, body, client):
-    print(body["actions"][0])
+    #print(body["actions"][0])
 
     uid = body["user"]["id"]
     selected_options = body["actions"][0]["selected_options"]
@@ -608,8 +608,8 @@ def do_sleep_stats():
                     """
                     if sleep_data["sleep"]:
                         if sleep_data["sleep"][-1]["endTime"] != last_sleep_endtime:
-                            print("endtime: " + sleep_data["sleep"][-1]["endTime"])
-                            print("endtime is different to the last one!")
+                            #print("endtime: " + sleep_data["sleep"][-1]["endTime"])
+                            #print("endtime is different to the last one!")
                             #print(datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"]))
                             endtime = datetime.datetime.fromisoformat(sleep_data["sleep"][-1]["endTime"])
                             if (datetime.datetime.now() - (endtime - datetime.timedelta(seconds=timezone_offset)) > datetime.timedelta(minutes=15) and datetime.datetime.now() - (endtime - datetime.timedelta(seconds=timezone_offset)) < datetime.timedelta(minutes=50)):
