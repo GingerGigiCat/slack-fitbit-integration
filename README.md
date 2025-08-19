@@ -2,6 +2,8 @@
 
 This is a slack bot to give you daily stats in a channel or a DM of your steps, minutes active and percentage of calories burned for activity. It can also send a message when you wake up, detailing how long you slept for.
 
+If you want to see the bot working without you having a Fitbit, you can find it in my personal channel https://hackclub.slack.com/archives/C099C6J7YA0 in the hack club slack 
+
 The bot is easily configurable via the bot's slack home view (pictured below), and it's easy to login with your fitbit account. (Note: when logging in for the first time, you'll have to click off the home tab and then click back onto it for it to refresh)
 
 <img width="1042" height="612" alt="image" src="https://github.com/user-attachments/assets/0db099a8-9683-47ba-877e-2fcd14b48c81" />
